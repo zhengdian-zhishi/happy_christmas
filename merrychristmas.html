@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>极客圣诞树 - 3D粒子版 (修正版)</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #000510; /* 深海蓝黑色背景，符合我们水下工程的审美 */
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            color: white;
+            font-family: 'Courier New', Courier, monospace;
+        }
+        canvas {
+            display: block;
+        }
+        .overlay {
+            position: absolute;
+            bottom: 20px;
+            text-align: center;
+            pointer-events: none;
+            text-shadow: 0 0 10px rgba(0, 255, 255, 0.8);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="overlay">
+        <h1>MERRY CHRISTMAS</h1>
+        <p>System Status: Online | Simulation: Active | Bug Fixed</p>
+    </div>
+
+    <script>
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        document.body.appendChild(canvas);
+
+        let width, height;
+        let particles = [];
+        let snow = [];
+        let angleY = 0;
+        const perspective = 800; // 视距，类似摄像头的焦距
+
+        // 初始化画布大小
+        function resize() {
+            width = window.innerWidth;
+            height = window.innerHeight;
+            canvas.width = width;
+            canvas.height = height;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // 粒子类 - 用于构建树
+        class Particle {
+            constructor(x, y, z, color, size) {
+                this.x = x;     // 原始3D坐标
+                this.y = y;
+                this.z = z;
+                this.color = color;
+                this.baseSize = size;
+                this.screenX = 0; // 投影后的2D坐标
+                this.screenY = 0;
+                this.scale = 0;
+            }
+
+            // 3D 旋转与投影计算
+            project(angle) {
+                // 绕Y轴旋转公式
+                const cos = Math.cos(angle);
+                const sin = Math.sin(angle);
+                
+                // 简单的旋转矩阵应用
+                const rotX = this.x * cos - this.z * sin;
+                const rotZ = this.z * cos + this.x * sin;
+                
+                // 投影变换：近大远小
+                this.scale = perspective / (perspective + rotZ + 400); 
+                this.screenX = width / 2 + rotX * this.scale;
+                this.screenY = height / 2 + this.y * this.scale * 1.2; // 1.2是拉伸系数，让树高一点
+            }
+
+            draw() {
+                if (this.scale > 0) {
+                    ctx.beginPath();
+                    ctx.fillStyle = this.color;
+                    // 根据距离调整透明度，模拟迷雾效果
+                    ctx.globalAlpha = Math.min(1, this.scale); 
+                    ctx.arc(this.screenX, this.screenY, this.baseSize * this.scale, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.globalAlpha = 1;
+                }
+            }
+        }
+
+        // 雪花类
+        class SnowFlake {
+            constructor() {
+                this.reset();
+            }
+            
+            reset() {
+                this.x = Math.random() * width;
+                this.y = Math.random() * -height; // 从屏幕上方开始
+                this.z = Math.random() * 0.5 + 0.5; // 远近不同
+                this.speed = Math.random() * 2 + 1;
+                this.size = Math.random() * 2 + 1;
+            }
+
+            update() {
+                this.y += this.speed;
+                if (this.y > height) {
+                    this.reset();
+                }
+            }
+
+            draw() {
+                ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // 生成圣诞树结构
+        function createTree() {
+            particles = [];
+            const layers = 60; // 层数
+            const pointsPerLayer = 15; // 每层点数
+            
+            // 树体
+            for (let i = 0; i < layers; i++) {
+                const y = -200 + i * 8; // Y轴从上到下
+                const radius = i * 4;   // 半径逐渐变大
+                
+                for (let j = 0; j < pointsPerLayer; j++) {
+                    const angle = (j / pointsPerLayer) * Math.PI * 2 + (i * 0.5); // 螺旋偏移
+                    const x = Math.cos(angle) * radius;
+                    const z = Math.sin(angle) * radius;
+                    
+                    // 颜色逻辑：主要是绿色，偶尔混入红色、黄色作为装饰灯
+                    let color = `rgb(0, ${150 + Math.random() * 105}, 0)`; // 基础绿
+                    const rand = Math.random();
+                    let size = 2;
+
+                    if (rand > 0.90) { // 装饰灯
+                        color = '#ff0000'; // 红灯
+                        size = 4;
+                    } else if (rand > 0.80) {
+                        color = '#ffff00'; // 黄灯
+                        size = 3;
+                    }
+
+                    particles.push(new Particle(x, y, z, color, size));
+                }
+            }
+        }
+
+        // 初始化雪花
+        for(let i=0; i<100; i++) {
+            snow.push(new SnowFlake());
+        }
+
+        createTree();
+
+        // 绘制顶部的星星 - 已由工程师修正算法
+        function drawStar(cx, cy, spikes, outerRadius, innerRadius, angleOffset) {
+            let rot = Math.PI / 2 * 3 + angleOffset; // 修正：直接在初始角度加上偏移量
+            let x = cx;
+            let y = cy;
+            let step = Math.PI / spikes;
+
+            ctx.beginPath();
+            
+            // 修正：循环次数改为 < spikes，避免多画一笔
+            for (let i = 0; i < spikes; i++) {
+                // 计算外顶点
+                x = cx + Math.cos(rot) * outerRadius;
+                y = cy + Math.sin(rot) * outerRadius;
+                
+                // 修正：第一笔移动画笔，后续笔画连线
+                if (i === 0) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
+                rot += step;
+
+                // 计算内顶点
+                x = cx + Math.cos(rot) * innerRadius;
+                y = cy + Math.sin(rot) * innerRadius;
+                ctx.lineTo(x, y);
+                rot += step;
+            }
+            
+            ctx.closePath(); // 闭合路径
+            
+            ctx.lineWidth = 5;
+            ctx.strokeStyle = '#ffd700'; // 金色边框
+            ctx.stroke();
+            ctx.fillStyle = '#ffff00';   // 黄色填充
+            ctx.fill();
+            
+            // 发光效果
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = "white";
+        }
+
+        // 主渲染循环
+        function animate() {
+            ctx.clearRect(0, 0, width, height);
+            
+            // 1. 绘制背景雪花
+            snow.forEach(s => {
+                s.update();
+                s.draw();
+            });
+
+            // 2. 更新并绘制树粒子
+            angleY += 0.01; // 旋转速度
+            
+            // 先计算所有粒子的新位置
+            particles.forEach(p => p.project(angleY));
+            
+            // 按Z轴深度排序，确保遮挡关系正确（简单的画家算法）
+            particles.sort((a, b) => a.scale - b.scale);
+
+            particles.forEach(p => p.draw());
+
+            // 3. 绘制顶部旋转的星星
+            const starY = -220;
+            const starScale = perspective / (perspective + 0 + 400); 
+            const starScreenX = width / 2;
+            const starScreenY = height / 2 + starY * starScale * 1.2;
+            
+            // 星星自转
+            const starRotation = Date.now() * 0.002;
+            
+            ctx.save();
+            drawStar(starScreenX, starScreenY, 5, 25, 10, starRotation);
+            ctx.restore();
+
+            requestAnimationFrame(animate);
+        }
+
+        animate();
+
+    </script>
+</body>
+</html>
